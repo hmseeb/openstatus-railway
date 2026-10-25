@@ -49,7 +49,7 @@ Only people who can read your Railway logs can log in, which is what keeps the i
 
 **Monitors**
 
-The onboarding screen's first check runs from OpenStatus's cloud regions, which do not exist self-hosted, so it says it couldn't reach your URL. Click Continue; the monitor is saved and your own probes start checking it within about 10 minutes.
+The onboarding screen's first check runs once from inside your project and shows a single Railway row with real status and latency (the 27-region wording is upstream's copy; self-hosted checks only run from your own probes). Your probes then pick the monitor up within about 10 minutes.
 
 Create further monitors as usual. Any monitor with no private location selected is attached to all four probes automatically. If you pick specific probes, your choice is kept. OpenStatus's own cloud regions do not exist self-hosted, so only the private locations run checks. The shortest check interval is 1 minute.
 
@@ -96,12 +96,11 @@ The `cron` service ships `os-admin`: `workspaces`, `users`, `probes`, `pages`, `
 Railway is a singular platform to deploy your infrastructure stack. Railway will host your infrastructure so you don't have to deal with configuration, while allowing you to vertically and horizontally scale it.
 
 By deploying OpenStatus on Railway, you are one step closer to supporting a complete full-stack application with minimal burden. Host your servers, databases, AI agents, and more on Railway.
-
 ## For maintainers
 
 - `template.json` is the build sheet; every non-obvious choice carries a `$note`. `upsert.py` writes it to Railway directly (no `templateGenerate`).
 - `images/` builds three images to GHCR on push (`.github/workflows/build.yml`). Bump the `-rN` tag in both the workflow and `template.json`.
-- `test/auto.sh` checks the `os-admin auto` contract (needs python3, sqlite3, curl, jq).
+- `test/auto.sh` checks the `os-admin auto` contract and `test/preview.sh` the onboarding preview checker (python3, sqlite3, curl, jq).
 - Upgrading OpenStatus: pick a commit whose short sha is tagged on all six `ghcr.io/openstatushq/openstatus-*` images, update `template.json` and `OPENSTATUS_REF` in `images/tinybird-deploy/Dockerfile`, then redeploy `db-migrate` and `tinybird-deploy` first.
 
 OpenStatus is AGPL-3.0; this repository holds deployment configuration only (MIT). See NOTICE.
