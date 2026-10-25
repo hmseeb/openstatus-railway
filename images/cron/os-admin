@@ -1,0 +1,109 @@
+#!/bin/sh
+# Admin toolbox for the self-hosted OpenStatus stack on Railway.
+# Run it from the cron service:  railway ssh -s cron -- os-admin <command>
+set -eu
+
+usage() {
+  cat <<'USAGE'
+os-admin <command>
+
+  workspaces                       list workspaces (id, slug, name, plan)
+  users                            list users (id, email)
+  setup <workspace-id>             unlock all features: limits + team plan + register probes + assign monitors
+  auto                             what the cron sidecar runs every minute: setup the FIRST workspace once,
+                                   then give any of its monitors with no probe every probe
+  limits <workspace-id>            set generous feature limits on a workspace
+  plan <workspace-id> [plan]       set the plan (default: team) for 10 years
+  register-probe <workspace-id>    register every probe service (PROBE_KEYS) as a private location
+  assign-all <workspace-id>        attach every monitor to every registered probe
+  probes                           list private locations
+  pages                            list status pages (id, slug, custom_domain)
+  page-domain <slug> <hostname>    serve a status page on a hostname (Railway domain or custom domain)
+  page-icon <slug> <url>           set a status page icon from a URL (uploads need Vercel Blob, which is not bundled)
+  tinybird-tokens                  print the Tinybird Local tokens
+  sql "<statement>"                run raw SQL against libSQL and print the result
+USAGE
+}
+
+: "${DATABASE_URL:?DATABASE_URL is required}"
+
+# Feature limits for a self-hosted workspace: upstream's scale plan (packages/db/src/schema/plan/config.ts)
+# minus features that need OpenStatus cloud services. No 30s periodicity: a 1 minute floor keeps probe
+# traffic to monitored hosts polite.
+LIMITS_JSON='{"monitors":50,"synthetic-checks":1000000,"periodicity":["1m","5m","10m","30m","1h"],"multi-region":true,"max-regions":35,"data-retention":"24 months","private-locations":true,"screenshots":false,"response-logs":true,"otel":false,"status-pages":20,"page-components":500,"maintenance":true,"monitor-values-visibility":true,"uptime-history":true,"status-subscribers":true,"custom-domain":true,"i18n":true,"password-protection":true,"email-domain-protection":true,"ip-restriction":true,"white-label":true,"no-index":true,"custom-theme":true,"notifications":true,"pagerduty":true,"opsgenie":true,"grafana-oncall":true,"whatsapp":false,"sms":false,"sms-limit":0,"notification-channels":50,"members":"Unlimited","audit-log":true,"sso":false,"slack-agent":false,"regions":["ams","arn","atl","bog","bom","bos","cdg","den","dfw","ewr","eze","fra","gdl","gig","gru","hkg","iad","jnb","lax","lhr","mad","mia","nrt","ord","otp","phx","qro","scl","sea","sin","sjc","syd","waw","yul","yyz"]}'
+
+sql() {
+  body=$(jq -cn --arg s "$1" '{statements: [$s]}')
+  out=$(curl -sS -X POST "${DATABASE_URL%/}/" -H 'Content-Type: application/json' -d "$body")
+  if ! printf '%s' "$out" | jq -e 'type == "array" and (.[0].error | not)' >/dev/null 2>&1; then
+    printf '%s\n' "$out" | jq -r 'if type == "array" then .[0].error.message else (.error // .) end' >&2
+    return 1
+  fi
+  printf '%s' "$out" | jq -r '.[0].results as $r | if ($r.rows | length) == 0 then "ok (\($r.columns | length) columns, 0 rows)" else ([$r.columns] + $r.rows) | .[] | map(tostring) | join("\t") end'
+}
+
+q() { printf '%s' "$1" | sed "s/'/''/g"; }
+
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+  workspaces) sql "SELECT id, slug, name, plan, limits != '{}' AS has_limits FROM workspace ORDER BY id" ;;
+  users) sql "SELECT id, email, created_at FROM user ORDER BY id" ;;
+  limits)
+    ws="${1:?workspace id required}"
+    sql "UPDATE workspace SET limits = '${LIMITS_JSON}' WHERE id = ${ws}"
+    echo "limits updated for workspace ${ws}" ;;
+  plan)
+    ws="${1:?workspace id required}"; plan="${2:-team}"
+    sql "UPDATE workspace SET plan = '$(q "$plan")', paid_until = strftime('%s','now') + 315360000, ends_at = NULL WHERE id = ${ws}"
+    echo "workspace ${ws} is now on the '${plan}' plan" ;;
+  register-probe)
+    ws="${1:?workspace id required}"
+    # PROBE_KEYS is "name=token,name=token,..." (one entry per probe service);
+    # falls back to a single probe named "railway" using OPENSTATUS_KEY.
+    keys="${PROBE_KEYS:-railway=${OPENSTATUS_KEY:-}}"
+    printf '%s\n' "$keys" | tr ',' '\n' | while IFS='=' read -r name token; do
+      [ -z "$name" ] || [ -z "$token" ] && continue
+      existing=$(sql "SELECT id FROM private_location WHERE token = '$(q "$token")'" | tail -n +2 | head -1 || true)
+      if [ -n "$existing" ]; then
+        [ -n "${QUIET:-}" ] || echo "probe '${name}' is already registered (id ${existing})"
+      else
+        sql "INSERT INTO private_location (name, token, status, workspace_id) VALUES ('$(q "$name")', '$(q "$token")', 'active', ${ws})" >/dev/null
+        echo "registered probe '${name}' for workspace ${ws}"
+      fi
+    done ;;
+  assign-all)
+    ws="${1:?workspace id required}"
+    sql "INSERT INTO private_location_to_monitor (private_location_id, monitor_id) SELECT pl.id, m.id FROM private_location pl JOIN monitor m ON m.workspace_id = pl.workspace_id WHERE pl.workspace_id = ${ws} AND NOT EXISTS (SELECT 1 FROM private_location_to_monitor x WHERE x.private_location_id = pl.id AND x.monitor_id = m.id)" >/dev/null
+    echo "every monitor in workspace ${ws} is now checked from every registered probe" ;;
+  probes) sql "SELECT id, name, status, workspace_id, datetime(last_seen_at, 'unixepoch') AS last_seen FROM private_location ORDER BY id" ;;
+  pages) sql "SELECT id, slug, custom_domain, workspace_id FROM page ORDER BY id" ;;
+  page-domain)
+    slug="${1:?page slug required}"; host="${2:?hostname required}"
+    host=$(printf '%s' "$host" | sed -e 's#^https\?://##' -e 's#/.*$##')
+    sql "UPDATE page SET custom_domain = '$(q "$host")' WHERE slug = '$(q "$slug")'"
+    echo "page '${slug}' is served at https://${host}/" ;;
+  page-icon)
+    slug="${1:?page slug required}"; url="${2:?image url required (png, ico or svg)}"
+    sql "UPDATE page SET icon = '$(q "$url")' WHERE slug = '$(q "$slug")'"
+    echo "page '${slug}' icon set to ${url}" ;;
+  setup)
+    ws="${1:?workspace id required}"
+    "$0" limits "$ws"; "$0" plan "$ws" team; "$0" register-probe "$ws"; "$0" assign-all "$ws" ;;
+  auto)
+    # Only the first workspace: it is the deployer's (the magic link is printed to the dashboard logs
+    # unless a real Resend key is set). Any later sign-up stays on empty limits with no probes, so its
+    # monitors are never executed.
+    ws=$(sql "SELECT min(id) FROM workspace" | tail -n +2)
+    case "$ws" in ''|null|ok*) exit 0 ;; esac
+    if [ "$(sql "SELECT limits = '{}' FROM workspace WHERE id = ${ws}" | tail -n +2)" = 1 ]; then
+      "$0" limits "$ws"; "$0" plan "$ws" team
+    fi
+    QUIET=1 "$0" register-probe "$ws"
+    sql "INSERT INTO private_location_to_monitor (private_location_id, monitor_id) SELECT pl.id, m.id FROM private_location pl JOIN monitor m ON m.workspace_id = pl.workspace_id WHERE pl.workspace_id = ${ws} AND NOT EXISTS (SELECT 1 FROM private_location_to_monitor x WHERE x.monitor_id = m.id)" >/dev/null ;;
+  tinybird-tokens)
+    : "${TINYBIRD_URL:?TINYBIRD_URL is required}"
+    curl -sS "${TINYBIRD_URL%/}/tokens" | jq . ;;
+  sql) sql "${1:?statement required}" ;;
+  help|-h|--help) usage ;;
+  *) echo "unknown command: $cmd" >&2; usage >&2; exit 1 ;;
+esac

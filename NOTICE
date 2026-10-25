@@ -1,0 +1,10 @@
+This repository contains deployment configuration only.
+
+OpenStatus (https://github.com/openstatusHQ/openstatus) is AGPL-3.0 and is
+pulled as upstream container images; none of its code is vendored here except
+the Tinybird project, which images/tinybird-deploy downloads at build time.
+
+images/tinybird-local, images/tinybird-deploy and images/cron/os-admin are
+adapted from ephraimduncan/openstatus-railway (MIT, per its README), which
+worked out Tinybird Local's thread limits on Railway and the os-admin toolbox.
+Changes here: pinned versions, the `auto` command, and the limits set.
