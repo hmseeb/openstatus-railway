@@ -14,6 +14,8 @@ RUN curl -fsSL "https://github.com/openstatusHQ/openstatus/archive/${OPENSTATUS_
     && rm -rf node_modules src scripts package.json tsconfig.json \
     && ls
 
+COPY patch_ttl.py /patch_ttl.py
+RUN python3 /patch_ttl.py /work/datasources
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

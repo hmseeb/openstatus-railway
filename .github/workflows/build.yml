@@ -31,9 +31,9 @@ jobs:
           push: true
           # Railway runs amd64.
           platforms: linux/amd64
-          # r1 = OpenStatus 3fa4995 (2026-10-25), first revision of this template.
+          # r2 = OpenStatus 3fa4995 (2026-10-25); r2 re-partitions short-TTL Tinybird datasources (patch_ttl.py).
           tags: |
-            ghcr.io/${{ github.repository_owner }}/openstatus-railway-${{ matrix.image }}:3fa4995-r1
+            ghcr.io/${{ github.repository_owner }}/openstatus-railway-${{ matrix.image }}:3fa4995-r2
             ghcr.io/${{ github.repository_owner }}/openstatus-railway-${{ matrix.image }}:latest
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
