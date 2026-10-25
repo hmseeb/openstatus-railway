@@ -33,4 +33,7 @@ CRONTAB
 echo "openstatus cron sidecar: auto-setup every minute, private-location-health every 5 min, external-status every 10 min via ${WORKFLOWS_URL}"
 /usr/local/bin/openstatus-auto || true
 /usr/local/bin/openstatus-cron /cron/private-location-health || true
-exec crond -f -l 8 -L /dev/stdout
+crond -l 8 -L /dev/stdout
+# Onboarding's first check (the dashboard image points its checker URLs here).
+# It is the foreground process, so a crash restarts the container and crond with it.
+exec python3 -u /usr/local/bin/preview.py
