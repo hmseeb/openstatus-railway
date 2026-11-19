@@ -41,7 +41,7 @@ Every image is pinned to one tested OpenStatus build, so a redeploy never pulls 
 
 1. Wait until `db-migrate` and `tinybird-deploy` show Completed and the other services are green. Tinybird Local takes the longest.
 2. Open the `dashboard` service's URL and go to `/login`. Enter your email and request a magic link.
-3. The link is not emailed. Open the `dashboard` service's **Deploy Logs**, find the line starting with `>>> Magic Link:`, and open that URL.
+3. The link is not emailed. Open the `dashboard` service's **Deploy Logs**, find the line containing `Magic Link:`, and open that URL.
 4. Create your workspace. Within a minute it is unlocked and the probes `railway-us-east`, `railway-us-west`, `railway-eu-west` and `railway-asia` appear under Settings, Private Locations.
 
 Only people who can read your Railway logs can log in, which is what keeps the instance yours. If you add a real Resend key (below), anyone who knows the URL can request a link by email, but only the first workspace (yours) gets probes and features, so their monitors never run.
@@ -51,7 +51,7 @@ Only people who can read your Railway logs can log in, which is what keeps the i
 
 The onboarding screen's first check runs once from inside your project and shows a single Railway row with real status and latency (the 27-region wording is upstream's copy; self-hosted checks only run from your own probes). Your probes then pick the monitor up within about 10 minutes.
 
-Create further monitors as usual. Any monitor with no private location selected is attached to all four probes automatically. If you pick specific probes, your choice is kept. OpenStatus's own cloud regions do not exist self-hosted, so only the private locations run checks. The shortest check interval is 1 minute.
+Create further monitors as usual. Any monitor with no private location selected is attached to all four probes automatically. If you pick specific probes, your choice is kept. Heartbeat monitors are not sent to probes: your jobs ping the URL the dashboard shows, which points at this project's `server` service. OpenStatus's own cloud regions do not exist self-hosted, so only the private locations run checks. The shortest check interval is 1 minute.
 
 **Spread the probes across regions**
 
@@ -62,17 +62,17 @@ All four probes start in your project's default region. Railway templates cannot
 On Railway a status page is served on a hostname, not a path. After creating a page, map the `status-page` service's domain (or a custom domain you add to that service) to it from the `cron` service's shell:
 
 ```
-os-admin page-domain <page-slug> <hostname>
+os-admin page-domain PAGE_SLUG HOSTNAME
 ```
 
-The dashboard's custom-domain form talks to Vercel and does not work self-hosted. Icon uploads need Vercel Blob; use `os-admin page-icon <page-slug> <image-url>` instead.
+The dashboard's custom-domain form talks to Vercel and does not work self-hosted. Icon uploads need Vercel Blob; use `os-admin page-icon PAGE_SLUG IMAGE_URL` instead.
 
 **Optional settings**
 
 Add these on the `dashboard` service at any time:
 
 - `RESEND_API_KEY`: a real [Resend](https://resend.com) key sends login links, alerts and subscriber emails. The other services read it from the dashboard.
-- `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` or `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`: social login. Callback URL `https://<dashboard-domain>/api/auth/callback/github` (or `/google`).
+- `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` or `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`: social login. Callback URL `https://DASHBOARD_DOMAIN/api/auth/callback/github` (or `/google`).
 - `AUTH_OIDC_ISSUER`, `AUTH_OIDC_ID`, `AUTH_OIDC_SECRET`: any OIDC provider.
 
 After adding a custom domain to the dashboard, update its `AUTH_URL` and `NEXT_PUBLIC_URL`.
@@ -89,7 +89,7 @@ Tinybird Local uses about 1 GB of memory at rest; the whole stack idles around 2
 
 **Toolbox**
 
-The `cron` service ships `os-admin`: `workspaces`, `users`, `probes`, `pages`, `setup <workspace-id>` (unlock another workspace on purpose), `page-domain`, `page-icon`, `sql "<statement>"`.
+The `cron` service ships `os-admin`: `workspaces`, `users`, `probes`, `pages`, `setup WORKSPACE_ID` (unlock another workspace on purpose), `page-domain`, `page-icon`, `sql "STATEMENT"`.
 
 ## Why Deploy OpenStatus on Railway?
 
@@ -99,8 +99,8 @@ By deploying OpenStatus on Railway, you are one step closer to supporting a comp
 ## For maintainers
 
 - `template.json` is the build sheet; every non-obvious choice carries a `$note`. `upsert.py` writes it to Railway directly (no `templateGenerate`).
-- `images/` builds three images to GHCR on push (`.github/workflows/build.yml`). Bump the `-rN` tag in both the workflow and `template.json`.
-- `test/auto.sh` checks the `os-admin auto` contract and `test/preview.sh` the onboarding preview checker (python3, sqlite3, curl, jq).
-- Upgrading OpenStatus: pick a commit whose short sha is tagged on all six `ghcr.io/openstatushq/openstatus-*` images, update `template.json` and `OPENSTATUS_REF` in `images/tinybird-deploy/Dockerfile`, then redeploy `db-migrate` and `tinybird-deploy` first.
+- `images/` builds four images to GHCR on push from the public image repo hmseeb/openstatus-railway (`.github/workflows/build.yml`). Tags are `COMMIT-rN`; bump the tag in both the workflow and `template.json`.
+- `test/auto.sh` checks the `os-admin auto` contract, `test/preview.sh` the onboarding preview checker, `test/crontab.sh` that the cron sidecar only calls routes workflows still serves (python3, sqlite3, curl, jq), and `test/listing_test.py` the listing text and that every image is on one commit.
+- Upgrading OpenStatus: pick a commit whose short sha is tagged on all six `ghcr.io/openstatushq/openstatus-*` images, update `template.json`, the dashboard `FROM` and `OPENSTATUS_REF` in `images/tinybird-deploy/Dockerfile`, re-pin the probe digest, then redeploy `db-migrate` and `tinybird-deploy` first.
 
 OpenStatus is AGPL-3.0; this repository holds deployment configuration only (MIT). See NOTICE.
