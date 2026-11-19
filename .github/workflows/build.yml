@@ -31,9 +31,9 @@ jobs:
           push: true
           # Railway runs amd64.
           platforms: linux/amd64
-          # r3 = OpenStatus 3fa4995; r2 re-partitioned short-TTL Tinybird datasources, r3 routes the onboarding first check to the cron service.
+          # 9620756-r1 = OpenStatus 9620756 (2026-11-18). Before: 3fa4995 r1-r3 (r2 re-partitioned short-TTL Tinybird datasources, r3 routed the onboarding first check to the cron service).
           tags: |
-            ghcr.io/${{ github.repository_owner }}/openstatus-railway-${{ matrix.image }}:3fa4995-r3
+            ghcr.io/${{ github.repository_owner }}/openstatus-railway-${{ matrix.image }}:9620756-r1
             ghcr.io/${{ github.repository_owner }}/openstatus-railway-${{ matrix.image }}:latest
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}

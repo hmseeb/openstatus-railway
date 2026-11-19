@@ -2,7 +2,7 @@
 # cron service (images/cron/preview.py) instead of OpenStatus's cloud checkers.
 # Those cannot answer a self-hosted install, so onboarding always said "Couldn't
 # reach <url>", and every run sent this deploy's CRON_SECRET to them.
-FROM ghcr.io/openstatushq/openstatus-dashboard:3fa4995
+FROM ghcr.io/openstatushq/openstatus-dashboard:9620756
 USER 0:0
 RUN files=$(grep -rlE 'openstatus-checker\.(fly\.dev|koyeb\.app)/ping|railway-proxy-production-9cb1\.up\.railway\.app/ping' /app/apps/dashboard/.next/server) \
     && [ -n "$files" ] \

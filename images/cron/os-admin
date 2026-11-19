@@ -15,7 +15,7 @@ os-admin <command>
   limits <workspace-id>            set generous feature limits on a workspace
   plan <workspace-id> [plan]       set the plan (default: team) for 10 years
   register-probe <workspace-id>    register every probe service (PROBE_KEYS) as a private location
-  assign-all <workspace-id>        attach every monitor to every registered probe
+  assign-all <workspace-id>        attach every monitor (except heartbeats, which get pinged) to every registered probe
   probes                           list private locations
   pages                            list status pages (id, slug, custom_domain)
   page-domain <slug> <hostname>    serve a status page on a hostname (Railway domain or custom domain)
@@ -30,7 +30,7 @@ USAGE
 # Feature limits for a self-hosted workspace: upstream's scale plan (packages/db/src/schema/plan/config.ts)
 # minus features that need OpenStatus cloud services. No 30s periodicity: a 1 minute floor keeps probe
 # traffic to monitored hosts polite.
-LIMITS_JSON='{"monitors":50,"synthetic-checks":1000000,"periodicity":["1m","5m","10m","30m","1h"],"multi-region":true,"max-regions":35,"data-retention":"24 months","private-locations":true,"screenshots":false,"response-logs":true,"otel":false,"status-pages":20,"page-components":500,"maintenance":true,"monitor-values-visibility":true,"uptime-history":true,"status-subscribers":true,"custom-domain":true,"i18n":true,"password-protection":true,"email-domain-protection":true,"ip-restriction":true,"white-label":true,"no-index":true,"custom-theme":true,"notifications":true,"pagerduty":true,"opsgenie":true,"grafana-oncall":true,"whatsapp":false,"sms":false,"sms-limit":0,"notification-channels":50,"members":"Unlimited","audit-log":true,"sso":false,"slack-agent":false,"regions":["ams","arn","atl","bog","bom","bos","cdg","den","dfw","ewr","eze","fra","gdl","gig","gru","hkg","iad","jnb","lax","lhr","mad","mia","nrt","ord","otp","phx","qro","scl","sea","sin","sjc","syd","waw","yul","yyz"]}'
+LIMITS_JSON='{"monitors":50,"synthetic-checks":1000000,"periodicity":["1m","5m","10m","30m","1h"],"multi-region":true,"max-regions":35,"data-retention":"24 months","private-locations":true,"screenshots":false,"response-logs":true,"otel":false,"status-pages":20,"page-components":500,"maintenance":true,"monitor-values-visibility":true,"uptime-history":true,"status-subscribers":true,"custom-domain":true,"i18n":true,"password-protection":true,"email-domain-protection":true,"ip-restriction":true,"white-label":true,"no-index":true,"custom-theme":true,"timezone":true,"notifications":true,"pagerduty":true,"opsgenie":true,"grafana-oncall":true,"whatsapp":false,"sms":false,"sms-limit":0,"notification-channels":50,"members":"Unlimited","audit-log":true,"sso":false,"slack-agent":false,"regions":["ams","arn","atl","bog","bom","bos","cdg","den","dfw","ewr","eze","fra","gdl","gig","gru","hkg","iad","jnb","lax","lhr","mad","mia","nrt","ord","otp","phx","qro","scl","sea","sin","sjc","syd","waw","yul","yyz"]}'
 
 sql() {
   body=$(jq -cn --arg s "$1" '{statements: [$s]}')
@@ -73,7 +73,7 @@ case "$cmd" in
     done ;;
   assign-all)
     ws="${1:?workspace id required}"
-    sql "INSERT INTO private_location_to_monitor (private_location_id, monitor_id) SELECT pl.id, m.id FROM private_location pl JOIN monitor m ON m.workspace_id = pl.workspace_id WHERE pl.workspace_id = ${ws} AND NOT EXISTS (SELECT 1 FROM private_location_to_monitor x WHERE x.private_location_id = pl.id AND x.monitor_id = m.id)" >/dev/null
+    sql "INSERT INTO private_location_to_monitor (private_location_id, monitor_id) SELECT pl.id, m.id FROM private_location pl JOIN monitor m ON m.workspace_id = pl.workspace_id WHERE pl.workspace_id = ${ws} AND m.job_type != 'heartbeat' AND NOT EXISTS (SELECT 1 FROM private_location_to_monitor x WHERE x.private_location_id = pl.id AND x.monitor_id = m.id)" >/dev/null
     echo "every monitor in workspace ${ws} is now checked from every registered probe" ;;
   probes) sql "SELECT id, name, status, workspace_id, datetime(last_seen_at, 'unixepoch') AS last_seen FROM private_location ORDER BY id" ;;
   pages) sql "SELECT id, slug, custom_domain, workspace_id FROM page ORDER BY id" ;;
@@ -99,7 +99,7 @@ case "$cmd" in
       "$0" limits "$ws"; "$0" plan "$ws" team
     fi
     QUIET=1 "$0" register-probe "$ws"
-    sql "INSERT INTO private_location_to_monitor (private_location_id, monitor_id) SELECT pl.id, m.id FROM private_location pl JOIN monitor m ON m.workspace_id = pl.workspace_id WHERE pl.workspace_id = ${ws} AND NOT EXISTS (SELECT 1 FROM private_location_to_monitor x WHERE x.monitor_id = m.id)" >/dev/null ;;
+    sql "INSERT INTO private_location_to_monitor (private_location_id, monitor_id) SELECT pl.id, m.id FROM private_location pl JOIN monitor m ON m.workspace_id = pl.workspace_id WHERE pl.workspace_id = ${ws} AND m.job_type != 'heartbeat' AND NOT EXISTS (SELECT 1 FROM private_location_to_monitor x WHERE x.monitor_id = m.id)" >/dev/null ;;
   tinybird-tokens)
     : "${TINYBIRD_URL:?TINYBIRD_URL is required}"
     curl -sS "${TINYBIRD_URL%/}/tokens" | jq . ;;

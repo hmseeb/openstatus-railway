@@ -4,7 +4,7 @@ set -eu
 cd "$(dirname "$0")"
 T=$(mktemp -d); trap 'kill $PID 2>/dev/null; rm -rf "$T"' EXIT
 sqlite3 "$T/db" "CREATE TABLE workspace (id INTEGER PRIMARY KEY, slug TEXT, name TEXT, plan TEXT, paid_until INT, ends_at INT, limits TEXT NOT NULL DEFAULT '{}');
-CREATE TABLE monitor (id INTEGER PRIMARY KEY, workspace_id INT);
+CREATE TABLE monitor (id INTEGER PRIMARY KEY, workspace_id INT, job_type TEXT NOT NULL DEFAULT 'http');
 CREATE TABLE private_location (id INTEGER PRIMARY KEY, name TEXT, token TEXT, status TEXT, workspace_id INT, last_seen_at INT);
 CREATE TABLE private_location_to_monitor (private_location_id INT, monitor_id INT);"
 python3 fake_sqld.py "$T/db" 18799 & PID=$!; sleep 1
@@ -15,18 +15,20 @@ fail() { echo "FAIL: $1"; exit 1; }
 
 $A auto; [ "$(q 'SELECT count(*) FROM private_location')" = 0 ] || fail "no workspace yet must be a no-op"
 
-q "INSERT INTO workspace (id, slug) VALUES (1,'mine'),(2,'stranger'); INSERT INTO monitor VALUES (10,1),(11,1),(20,2);"
+q "INSERT INTO workspace (id, slug) VALUES (1,'mine'),(2,'stranger'); INSERT INTO monitor (id, workspace_id) VALUES (10,1),(11,1),(20,2); INSERT INTO monitor VALUES (13,1,'heartbeat');"
 $A auto >/dev/null
 [ "$(q "SELECT plan FROM workspace WHERE id=1")" = team ] || fail "first workspace not on team plan"
 q "SELECT json_extract(limits,'\$.\"private-locations\"') FROM workspace WHERE id=1" | grep -qx 1 || fail "private-locations not unlocked"
+q "SELECT json_extract(limits,'\$.timezone') FROM workspace WHERE id=1" | grep -qx 1 || fail "status page time zone not unlocked"
 q "SELECT limits FROM workspace WHERE id=1" | grep -q '"30s"' && fail "30s periodicity must stay off"
 [ "$(q "SELECT limits FROM workspace WHERE id=2")" = '{}' ] || fail "second workspace must keep empty limits"
 [ "$(q "SELECT count(*) FROM private_location WHERE workspace_id=1")" = 4 ] || fail "4 probes expected on workspace 1"
 [ "$(q "SELECT count(*) FROM private_location_to_monitor WHERE monitor_id IN (10,11)")" = 8 ] || fail "both monitors on all 4 probes"
 [ "$(q "SELECT count(*) FROM private_location_to_monitor WHERE monitor_id=20")" = 0 ] || fail "stranger monitor must not run"
+[ "$(q "SELECT count(*) FROM private_location_to_monitor WHERE monitor_id=13")" = 0 ] || fail "heartbeat monitor must not go to probes (they cannot run it)"
 
 # deployer narrows monitor 10 to one probe and edits limits; a new monitor appears
-q "DELETE FROM private_location_to_monitor WHERE monitor_id=10 AND private_location_id>1; UPDATE workspace SET limits='{\"monitors\":3}' WHERE id=1; INSERT INTO monitor VALUES (12,1);"
+q "DELETE FROM private_location_to_monitor WHERE monitor_id=10 AND private_location_id>1; UPDATE workspace SET limits='{\"monitors\":3}' WHERE id=1; INSERT INTO monitor (id, workspace_id) VALUES (12,1);"
 out=$($A auto)
 [ -z "$out" ] || fail "steady-state run should be silent, got: $out"
 [ "$(q "SELECT count(*) FROM private_location_to_monitor WHERE monitor_id=10")" = 1 ] || fail "deployer's probe choice overwritten"

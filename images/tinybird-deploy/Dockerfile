@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-ARG OPENSTATUS_REF=3fa4995bc8713465eac529e7e0db6eb08066b659
+ARG OPENSTATUS_REF=962075621df78404bd9a29a25fa79df4d4930ff3
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates jq \
