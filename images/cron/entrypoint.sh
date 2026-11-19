@@ -27,10 +27,10 @@ chmod +x /usr/local/bin/openstatus-cron /usr/local/bin/openstatus-auto
 cat > /etc/crontabs/root <<CRONTAB
 * * * * * /usr/local/bin/openstatus-auto
 */5 * * * * /usr/local/bin/openstatus-cron /cron/private-location-health
-*/10 * * * * /usr/local/bin/openstatus-cron /cron/external-status
 CRONTAB
 
-echo "openstatus cron sidecar: auto-setup every minute, private-location-health every 5 min, external-status every 10 min via ${WORKFLOWS_URL}"
+# The other upstream crons (outbox, heartbeat sweep, status drift, prunes) run inside the workflows service.
+echo "openstatus cron sidecar: auto-setup every minute, private-location-health every 5 min via ${WORKFLOWS_URL}"
 /usr/local/bin/openstatus-auto || true
 /usr/local/bin/openstatus-cron /cron/private-location-health || true
 crond -l 8 -L /dev/stdout
